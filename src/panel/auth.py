@@ -54,7 +54,7 @@ async def start_auth(request: AuthStartRequest, token: str = Depends(verify_pane
         # 使用认证令牌作为用户会话标识
         user_session = token if token else None
         result = await create_auth_url(
-            project_id, user_session, mode=request.mode
+            project_id, user_session, mode=request.mode, proxy_id=request.proxy_id
         )
 
         if result["success"]:

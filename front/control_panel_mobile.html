@@ -1068,6 +1068,16 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label for="oauthProxySelect">🌐 代理（可选）:</label>
+                    <select id="oauthProxySelect" style="width:100%; padding:10px;">
+                        <option value="">使用全局代理 / 直连</option>
+                    </select>
+                    <small style="display:block; color:#666; font-size:12px; margin-top:5px;">
+                        💡 选择后，本次授权生成的凭据将始终通过该代理发起请求
+                    </small>
+                </div>
+
                 <button class="btn" id="getAuthBtn" onclick="startAuth()">获取认证链接</button>
 
                 <div id="authUrlSection" class="hidden">
@@ -1157,6 +1167,16 @@
                     <p style="margin: 10px 0; font-size: 13px;">
                         获取谷歌Antigravity 凭证
                     </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="agProxySelect">🌐 代理（可选）:</label>
+                    <select id="agProxySelect" style="width:100%; padding:10px;">
+                        <option value="">使用全局代理 / 直连</option>
+                    </select>
+                    <small style="display:block; color:#666; font-size:12px; margin-top:5px;">
+                        💡 选择后，本次授权生成的凭据将始终通过该代理发起请求
+                    </small>
                 </div>
 
                 <button class="btn" id="getAntigravityAuthBtn">获取 Antigravity 认证链接</button>

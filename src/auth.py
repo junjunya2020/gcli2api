@@ -231,7 +231,8 @@ class AuthCallbackHandler(BaseHTTPRequestHandler):
 
 
 async def create_auth_url(
-    project_id: Optional[str] = None, user_session: str = None, mode: str = "geminicli"
+    project_id: Optional[str] = None, user_session: str = None, mode: str = "geminicli",
+    proxy_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """创建认证URL，支持动态端口分配"""
     try:
@@ -315,6 +316,7 @@ async def create_auth_url(
             "created_at": time.time(),
             "auto_project_detection": project_id is None,  # 标记是否需要自动检测项目ID
             "mode": mode,  # 凭证模式
+            "proxy_id": proxy_id,  # 预选代理（本 fork 增强），授权成功后写入凭据
         }
 
         # 清理过期的流程（30分钟）
@@ -486,11 +488,13 @@ async def complete_auth_flow(
                     flow_data["project_id"] = project_id
                     log.warning(f"仍未获取到project_id，使用默认project_id: {project_id}")
 
-                # 保存凭证
-                saved_filename = await save_credentials(credentials, project_id)
+                # 保存凭证（携带预选代理绑定）
+                saved_filename = await save_credentials(credentials, project_id, proxy_id=flow_data.get("proxy_id"))
 
                 # 准备返回的凭证数据
                 creds_data = _prepare_credentials_data(credentials, project_id, mode="geminicli")
+                if flow_data.get("proxy_id"):
+                    creds_data["proxy"] = flow_data.get("proxy_id")
 
                 # 清理使用过的流程
                 _cleanup_auth_flow_server(state)
@@ -670,11 +674,13 @@ async def asyncio_complete_auth_flow(
                         project_id = DEFAULT_PROJECT_ID
                         log.warning(f"无法从API获取project_id，使用默认project_id: {project_id}")
 
-                    # 保存antigravity凭证
-                    saved_filename = await save_credentials(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
+                    # 保存antigravity凭证（携带预选代理绑定）
+                    saved_filename = await save_credentials(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier, proxy_id=flow_data.get("proxy_id"))
 
                     # 准备返回的凭证数据
                     creds_data = _prepare_credentials_data(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
+                    if flow_data.get("proxy_id"):
+                        creds_data["proxy"] = flow_data.get("proxy_id")
 
                     # 清理使用过的流程
                     _cleanup_auth_flow_server(state)
@@ -741,11 +747,13 @@ async def asyncio_complete_auth_flow(
                     flow_data["project_id"] = project_id
                     log.warning(f"仍未获取到project_id，使用默认project_id: {project_id}")
 
-                # 保存凭证
-                saved_filename = await save_credentials(credentials, project_id)
+                # 保存凭证（携带预选代理绑定）
+                saved_filename = await save_credentials(credentials, project_id, proxy_id=flow_data.get("proxy_id"))
 
                 # 准备返回的凭证数据
                 creds_data = _prepare_credentials_data(credentials, project_id, mode="geminicli")
+                if flow_data.get("proxy_id"):
+                    creds_data["proxy"] = flow_data.get("proxy_id")
 
                 # 清理使用过的流程
                 _cleanup_auth_flow_server(state)
@@ -823,11 +831,13 @@ async def complete_auth_flow_from_callback_url(
                     project_id = DEFAULT_PROJECT_ID
                     log.warning(f"无法从API获取project_id，使用默认project_id: {project_id}")
 
-                # 保存antigravity凭证
-                saved_filename = await save_credentials(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
+                # 保存antigravity凭证（携带预选代理绑定）
+                saved_filename = await save_credentials(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier, proxy_id=flow_data.get("proxy_id"))
 
                 # 准备返回的凭证数据
                 creds_data = _prepare_credentials_data(credentials, project_id, mode="antigravity", subscription_tier=subscription_tier)
+                if flow_data.get("proxy_id"):
+                    creds_data["proxy"] = flow_data.get("proxy_id")
 
                 # 清理使用过的流程
                 _cleanup_auth_flow_server(state)
@@ -882,11 +892,13 @@ async def complete_auth_flow_from_callback_url(
                 except Exception as e:
                     log.warning(f"启用API服务失败: {e}")
 
-            # 保存凭证
-            saved_filename = await save_credentials(credentials, detected_project_id, subscription_tier=subscription_tier)
+            # 保存凭证（携带预选代理绑定）
+            saved_filename = await save_credentials(credentials, detected_project_id, subscription_tier=subscription_tier, proxy_id=flow_data.get("proxy_id"))
 
             # 准备返回的凭证数据
             creds_data = _prepare_credentials_data(credentials, detected_project_id, mode="geminicli", subscription_tier=subscription_tier)
+            if flow_data.get("proxy_id"):
+                creds_data["proxy"] = flow_data.get("proxy_id")
 
             # 清理使用过的流程
             _cleanup_auth_flow_server(state)
@@ -908,7 +920,7 @@ async def complete_auth_flow_from_callback_url(
         return {"success": False, "error": str(e)}
 
 
-async def save_credentials(creds: Credentials, project_id: str, mode: str = "geminicli", subscription_tier: str = None) -> str:
+async def save_credentials(creds: Credentials, project_id: str, mode: str = "geminicli", subscription_tier: str = None, proxy_id: str = None) -> str:
     """通过统一存储系统保存凭证"""
     # 生成文件名（使用project_id和时间戳）
     timestamp = int(time.time())
@@ -921,6 +933,10 @@ async def save_credentials(creds: Credentials, project_id: str, mode: str = "gem
 
     # 准备凭证数据
     creds_data = _prepare_credentials_data(creds, project_id, mode, subscription_tier)
+
+    # 预选代理绑定（本 fork 增强）：写入凭据的 "proxy" 字段
+    if proxy_id:
+        creds_data["proxy"] = proxy_id
 
     # 通过存储适配器保存
     storage_adapter = await get_storage_adapter()

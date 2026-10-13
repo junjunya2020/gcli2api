@@ -127,7 +127,9 @@ function createCredsManager(type) {
                             model_cooldowns: item.model_cooldowns || {},
                             preview: item.preview,
                             tier: item.tier || 'pro',
-                            enable_credit: !!item.enable_credit
+                            enable_credit: !!item.enable_credit,
+                            proxy: item.proxy || null,
+                            proxy_name: item.proxy_name || null
                         };
                     });
 
@@ -678,6 +680,14 @@ function createCredCard(credInfo, manager) {
         }
     }
 
+    // 代理绑定显示（本 fork 增强）
+    if (credInfo.proxy) {
+        const pname = credInfo.proxy_name || credInfo.proxy;
+        statusBadges += `<span class="status-badge" style="background-color: #6f42c1; color: white;" title="该凭据绑定的代理">🌐 ${escapeHtml(pname)}</span>`;
+    } else {
+        statusBadges += '<span class="status-badge" style="background-color: #adb5bd; color: white;" title="使用全局代理（配置管理中的代理设置）">🌐 全局</span>';
+    }
+
     // 模型级冷却状态
     if (credInfo.model_cooldowns && Object.keys(credInfo.model_cooldowns).length > 0) {
         const currentTime = Date.now() / 1000;
@@ -725,6 +735,7 @@ function createCredCard(credInfo, manager) {
         ) : ''}
         ${managerType !== 'antigravity' ? `<button class="cred-btn" onclick="configurePreviewChannel('${filename}')" title="配置Preview通道，启用实验性功能">设置预览</button>` : ''}
         <button class="cred-btn" onclick="verify${managerType === 'antigravity' ? 'Antigravity' : ''}ProjectId('${filename}')" title="重新获取Project ID，可恢复403错误">检验</button>
+        <button class="cred-btn" onclick="set${managerType === 'antigravity' ? 'Antigravity' : ''}CredentialProxy('${filename}')" title="为该凭据绑定独立代理">设置代理</button>
         <button class="cred-btn" onclick="test${managerType === 'antigravity' ? 'Antigravity' : ''}Credential('${filename}')" title="测试凭证是否可用">消息测试</button>
         <button class="cred-btn" onclick="toggle${managerType === 'antigravity' ? 'Antigravity' : ''}ErrorDetails('${pathId}')" title="查看该凭证的详细报错信息">查看报错</button>
         <button class="cred-btn delete" data-filename="${filename}" data-action="delete">删除</button>
@@ -855,6 +866,8 @@ async function login() {
             showStatus('登录成功', 'success');
             // 显示面板后初始化滑块
             requestAnimationFrame(() => initTabSlider());
+            // 加载代理下拉与代理管理列表（本 fork 增强）
+            loadProxyOptions();
         } else {
             showStatus(`登录失败: ${data.detail || data.error || '未知错误'}`, 'error');
         }
@@ -883,6 +896,8 @@ async function autoLogin() {
             showStatus('自动登录成功', 'success');
             // 显示面板后初始化滑块
             requestAnimationFrame(() => initTabSlider());
+            // 加载代理下拉与代理管理列表（本 fork 增强）
+            loadProxyOptions();
             return true;
         } else if (response.status === 401) {
             localStorage.removeItem('gcli2api_auth_token');
@@ -1036,7 +1051,7 @@ function switchTab(tabName) {
 function triggerTabDataLoad(tabName) {
     if (tabName === 'manage') AppState.creds.refresh();
     if (tabName === 'antigravity-manage') AppState.antigravityCreds.refresh();
-    if (tabName === 'config') loadConfig();
+    if (tabName === 'config') { loadConfig(); loadProxyOptions(); loadProxyList(); }
     if (tabName === 'logs') connectWebSocket();
 }
 
@@ -1054,6 +1069,8 @@ async function startAuth() {
 
     try {
         const requestBody = projectId ? { project_id: projectId } : {};
+        const oauthProxySel = document.getElementById('oauthProxySelect');
+        if (oauthProxySel && oauthProxySel.value) requestBody.proxy_id = oauthProxySel.value;
         showStatus(projectId ? '使用指定的项目ID生成认证链接...' : '将尝试自动检测项目ID，正在生成认证链接...', 'info');
 
         const response = await fetch('./auth/start', {
@@ -1170,10 +1187,12 @@ async function startAntigravityAuth() {
     try {
         showStatus('正在生成 Antigravity 认证链接...', 'info');
 
+        const agProxySel = document.getElementById('agProxySelect');
+        const agProxyId = agProxySel && agProxySel.value ? agProxySel.value : null;
         const response = await fetch('./auth/start', {
             method: 'POST',
             headers: getAuthHeaders(),
-            body: JSON.stringify({ mode: 'antigravity' })
+            body: JSON.stringify({ mode: 'antigravity', proxy_id: agProxyId })
         });
 
         const data = await response.json();
@@ -3221,4 +3240,211 @@ document.addEventListener('DOMContentLoaded', function () {
 function autoSetKeepaliveUrl() {
     const url = `${window.location.protocol}//${window.location.host}`;
     document.getElementById('keepaliveUrl').value = url;
+}
+
+// =====================================================================
+// 代理管理（per-credential proxy，本 fork 增强）
+// =====================================================================
+let __proxyCache = [];
+
+// 加载代理列表，用于填充 OAuth 页的代理下拉
+async function loadProxyOptions() {
+    try {
+        const response = await fetch('./proxies/list', { headers: getAuthHeaders() });
+        if (!response.ok) return;
+        const data = await response.json();
+        __proxyCache = data.proxies || [];
+    } catch (e) {
+        return;
+    }
+    ['oauthProxySelect', 'agProxySelect'].forEach(selId => {
+        const sel = document.getElementById(selId);
+        if (!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">使用全局代理 / 直连</option>' +
+            __proxyCache.map(p =>
+                `<option value="${p.id}">${escapeHtml(p.name)} (${escapeHtml(p.url)})${p.enabled === false ? ' [已禁用]' : ''}</option>`
+            ).join('');
+        if (prev && __proxyCache.some(p => p.id === prev)) sel.value = prev;
+    });
+}
+
+// 渲染“配置管理 → 代理管理”列表
+async function loadProxyList() {
+    const box = document.getElementById('proxyList');
+    if (!box) return;
+    box.innerHTML = '<p style="color:#888;">加载中...</p>';
+    try {
+        const response = await fetch('./proxies/list', { headers: getAuthHeaders() });
+        const data = await response.json();
+        if (!response.ok) {
+            box.innerHTML = `<p style="color:#dc3545;">加载失败: ${escapeHtml(data.detail || data.error || '未知错误')}</p>`;
+            return;
+        }
+        __proxyCache = data.proxies || [];
+        if (__proxyCache.length === 0) {
+            box.innerHTML = '<p style="color:#888;">暂无代理，请在上方新增。</p>';
+            return;
+        }
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:13px;">';
+        html += '<tr style="background:#f1f3f4;"><th style="text-align:left;padding:6px;">名称</th><th style="text-align:left;padding:6px;">地址</th><th style="padding:6px;">状态</th><th style="padding:6px;">操作</th></tr>';
+        __proxyCache.forEach(p => {
+            html += `<tr style="border-top:1px solid #eee;">
+                <td style="padding:6px;">${escapeHtml(p.name)}</td>
+                <td style="padding:6px; word-break:break-all; color:#555;">${escapeHtml(p.url)}</td>
+                <td style="padding:6px; text-align:center;">${p.enabled === false
+                    ? '<span style="color:#dc3545;">已禁用</span>'
+                    : '<span style="color:#28a745;">启用</span>'}</td>
+                <td style="padding:6px; text-align:center; white-space:nowrap;">
+                    <button class="cred-btn" onclick="testProxy('${p.id}')">测试代理</button>
+                    <button class="cred-btn" onclick="toggleProxyEnabled('${p.id}', ${p.enabled === false})">${p.enabled === false ? '启用' : '禁用'}</button>
+                    <button class="cred-btn delete" onclick="deleteProxy('${p.id}')">删除</button>
+                </td>
+            </tr>
+            <tr id="proxy-test-${p.id}" style="display:none;"><td colspan="4" style="padding:8px; background:#f8f9fa;" id="proxy-test-result-${p.id}"></td></tr>`;
+        });
+        html += '</table>';
+        box.innerHTML = html;
+    } catch (e) {
+        box.innerHTML = `<p style="color:#dc3545;">网络错误: ${escapeHtml(e.message)}</p>`;
+    }
+}
+
+async function addProxy() {
+    const name = (document.getElementById('newProxyName')?.value || '').trim();
+    const url = (document.getElementById('newProxyUrl')?.value || '').trim();
+    if (!name || !url) { showStatus('请填写代理名称和地址', 'error'); return; }
+    try {
+        const response = await fetch('./proxies/add', {
+            method: 'POST', headers: getAuthHeaders(),
+            body: JSON.stringify({ name, url, enabled: true })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showStatus(`✅ 已新增代理: ${name}`, 'success');
+            document.getElementById('newProxyName').value = '';
+            document.getElementById('newProxyUrl').value = '';
+            await loadProxyList();
+            await loadProxyOptions();
+        } else {
+            showStatus(`新增失败: ${data.detail || data.error || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showStatus(`网络错误: ${e.message}`, 'error');
+    }
+}
+
+async function deleteProxy(id) {
+    const p = __proxyCache.find(x => x.id === id);
+    if (!confirm(`确定删除代理「${p ? p.name : id}」吗？\n引用它的凭据将回退到全局代理。`)) return;
+    try {
+        const response = await fetch('./proxies/delete', {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ id })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showStatus('✅ 代理已删除', 'success');
+            await loadProxyList();
+            await loadProxyOptions();
+        } else {
+            showStatus(`删除失败: ${data.detail || data.error || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showStatus(`网络错误: ${e.message}`, 'error');
+    }
+}
+
+async function toggleProxyEnabled(id, setEnabled) {
+    try {
+        const response = await fetch('./proxies/update', {
+            method: 'POST', headers: getAuthHeaders(),
+            body: JSON.stringify({ id, enabled: setEnabled })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showStatus(setEnabled ? '✅ 代理已启用' : '✅ 代理已禁用', 'success');
+            await loadProxyList();
+            await loadProxyOptions();
+        } else {
+            showStatus(`操作失败: ${data.detail || data.error || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showStatus(`网络错误: ${e.message}`, 'error');
+    }
+}
+
+async function testProxy(id) {
+    const row = document.getElementById('proxy-test-' + id);
+    const cell = document.getElementById('proxy-test-result-' + id);
+    if (row && cell) {
+        row.style.display = 'table-row';
+        cell.innerHTML = '⏳ 正在测试代理...';
+    }
+    try {
+        const response = await fetch('./proxies/test', {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ id })
+        });
+        const data = await response.json();
+        let msg;
+        if (data.ok) {
+            msg = `✅ 可用　出口IP: <b>${escapeHtml(data.exit_ip || '未知')}</b>　耗时: ${data.latency_ms}ms　Google: HTTP ${data.status}`;
+        } else {
+            msg = `❌ 不可用：${escapeHtml(data.error || '未知错误')}`;
+        }
+        if (cell) cell.innerHTML = msg;
+        showStatus(data.ok ? '✅ 代理测试通过' : '❌ 代理测试失败', data.ok ? 'success' : 'error');
+    } catch (e) {
+        if (cell) cell.innerHTML = `❌ 网络错误: ${escapeHtml(e.message)}`;
+        showStatus(`网络错误: ${e.message}`, 'error');
+    }
+}
+
+// 为某条凭据设置/清除代理（弹出选择框）
+async function setCredentialProxy(filename, mode, managerRefresh) {
+    const mgrType = mode === 'antigravity' ? 'antigravity' : 'normal';
+    const modeParam = mgrType === 'antigravity' ? 'mode=antigravity' : 'mode=geminicli';
+
+    if (!__proxyCache || __proxyCache.length === 0) await loadProxyOptions();
+
+    // 读取该凭据当前绑定
+    let current = null;
+    try {
+        const r = await fetch(`./creds/detail/${encodeURIComponent(filename)}?${modeParam}`, { headers: getAuthHeaders() });
+        if (r.ok) { const d = await r.json(); current = d.proxy || ''; }
+    } catch (e) { /* ignore */ }
+
+    const options = ['0 = 使用全局代理（解绑）'].concat(
+        __proxyCache.map((p, i) => `${i + 1} = ${p.name} (${p.url})${p.enabled === false ? ' [已禁用]' : ''}`)
+    );
+    if (__proxyCache.length === 0) {
+        showStatus('还没有代理，请先到「配置管理 → 代理管理」新增代理', 'error');
+        return;
+    }
+    const sel = prompt(`为凭据 [${filename}] 选择代理：\n\n${options.join('\n')}\n\n输入序号：`, '');
+    if (sel === null) return;
+    const idx = parseInt(sel, 10);
+    if (isNaN(idx) || idx < 0 || idx > __proxyCache.length) { showStatus('无效的选择', 'error'); return; }
+    const proxyId = idx === 0 ? '' : __proxyCache[idx - 1].id;
+
+    try {
+        const response = await fetch(`./creds/proxy/${encodeURIComponent(filename)}?${modeParam}`, {
+            method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ proxy: proxyId })
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showStatus(proxyId ? `✅ 已绑定代理: ${data.proxy_name || proxyId}` : '✅ 已解绑，使用全局代理', 'success');
+            if (managerRefresh) managerRefresh();
+        } else {
+            showStatus(`设置失败: ${data.detail || data.error || '未知错误'}`, 'error');
+        }
+    } catch (e) {
+        showStatus(`网络错误: ${e.message}`, 'error');
+    }
+}
+
+function setCredentialProxyNormal(filename) {
+    return setCredentialProxy(filename, 'geminicli', () => AppState.creds.refresh());
+}
+function setAntigravityCredentialProxy(filename) {
+    return setCredentialProxy(filename, 'antigravity', () => AppState.antigravityCreds.refresh());
 }

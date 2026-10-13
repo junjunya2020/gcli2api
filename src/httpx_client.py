@@ -12,15 +12,33 @@ import httpx
 from config import get_proxy_config
 from log import log
 
+# 哨兵：用于区分「未传入 proxy」和「显式传入 proxy=None」
+_UNSET = object()
+
 
 class HttpxClientManager:
     """通用HTTP客户端管理器"""
 
     async def get_client_kwargs(self, timeout: float = 30.0, **kwargs) -> Dict[str, Any]:
-        """获取httpx客户端的通用配置参数"""
+        """获取httpx客户端的通用配置参数
+
+        代理优先级（本 fork 增强）：
+            1. 调用方显式传入的 proxy 参数（per-credential 代理）
+            2. 全局代理配置（config: proxy / 环境变量 PROXY）
+        传入 proxy=None 也会视为「显式指定不使用代理」，不会回退全局代理。
+        """
+        # 显式代理优先：只要调用方「传了」proxy 这个键（哪怕值是 None），就以它为准
+        explicit_proxy = kwargs.pop("proxy", _UNSET)
+
         client_kwargs = {"timeout": timeout, **kwargs}
 
-        # 动态读取代理配置，支持热更新
+        if explicit_proxy is not _UNSET:
+            if explicit_proxy:
+                client_kwargs["proxy"] = explicit_proxy
+            # explicit_proxy 为 None/空 -> 明确不使用代理，忽略全局配置
+            return client_kwargs
+
+        # 未显式传入 -> 动态读取全局代理配置，支持热更新
         current_proxy_config = await get_proxy_config()
         if current_proxy_config:
             client_kwargs["proxy"] = current_proxy_config

@@ -23,6 +23,8 @@ from src.storage_adapter import get_storage_adapter
 from src.utils import verify_panel_token, GEMINICLI_USER_AGENT, ANTIGRAVITY_USER_AGENT
 from src.api.antigravity import fetch_quota_info
 from src.google_oauth_api import Credentials, fetch_project_id_and_tier, get_user_projects, select_default_project, enable_required_apis
+from src import proxies as proxy_store
+from src.proxies import resolve_proxy_for_credential
 from config import get_code_assist_endpoint, get_antigravity_api_url
 from .utils import validate_mode
 
@@ -269,6 +271,13 @@ async def get_creds_status_common(
     )
 
     creds_list = []
+    # 预先加载所有代理实体，用于把凭据绑定的代理 id 解析成名称
+    try:
+        proxy_list = await proxy_store.list_proxies()
+    except Exception:
+        proxy_list = []
+    proxy_name_by_id = {p.get("id"): p.get("name") for p in proxy_list}
+
     for summary in result["items"]:
         cred_info = {
             "filename": os.path.basename(summary["filename"]),
@@ -280,6 +289,15 @@ async def get_creds_status_common(
             "model_cooldowns": summary.get("model_cooldowns", {}),
             "tier": summary.get("tier", "pro"),
         }
+
+        # 读取该凭据绑定的代理（存储在凭据 JSON 的 "proxy" 字段中）
+        try:
+            cdata = await storage_adapter.get_credential(summary["filename"], mode=mode)
+            bound_id = (cdata or {}).get("proxy")
+        except Exception:
+            bound_id = None
+        cred_info["proxy"] = bound_id
+        cred_info["proxy_name"] = proxy_name_by_id.get(bound_id) if bound_id else None
 
         if mode == "geminicli":
             cred_info["preview"] = summary.get("preview", True)
@@ -745,6 +763,15 @@ async def get_cred_detail(
             "model_cooldowns": file_status.get("model_cooldowns", {}),
         }
 
+        # 附带该凭据绑定的代理信息
+        bound_id = credential_data.get("proxy")
+        result["proxy"] = bound_id
+        if bound_id:
+            p = await proxy_store.get_proxy(bound_id)
+            result["proxy_name"] = (p or {}).get("name")
+        else:
+            result["proxy_name"] = None
+
         if mode == "geminicli":
             result["preview"] = file_status.get("preview", True)
         else:
@@ -1193,8 +1220,9 @@ async def get_credential_quota(
         if not access_token:
             raise HTTPException(status_code=400, detail="凭证中没有访问令牌")
 
-        # 获取额度信息
-        quota_info = await fetch_quota_info(access_token)
+        # 获取额度信息（使用该凭据绑定的代理，否则全局代理）
+        cred_proxy = await resolve_proxy_for_credential(credential_data)
+        quota_info = await fetch_quota_info(access_token, proxy=cred_proxy)
 
         if quota_info.get("success"):
             return JSONResponse(content={
@@ -1520,6 +1548,9 @@ async def test_credential(
                 "User-Agent": GEMINICLI_USER_AGENT,
             }
 
+        # 解析该凭据应使用的代理（凭据绑定代理，否则回退全局代理）
+        cred_proxy = await resolve_proxy_for_credential(credential_data)
+
         # 第一次测试：使用 gemini-2.5-flash
         response = await post_async(
             url=f"{api_base_url}/v1internal:generateContent",
@@ -1532,7 +1563,8 @@ async def test_credential(
                 }
             },
             headers=headers,
-            timeout=30.0
+            timeout=30.0,
+            proxy=cred_proxy
         )
 
         # 返回实际的状态码和详细信息
@@ -1564,7 +1596,8 @@ async def test_credential(
                                 }
                             },
                             headers=headers,
-                            timeout=30.0
+                            timeout=30.0,
+                            proxy=cred_proxy
                         )
 
                         preview_status = preview_response.status_code
@@ -1639,3 +1672,76 @@ async def test_credential(
     except Exception as e:
         log.error(f"测试凭证失败 {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"测试失败: {str(e)}")
+
+
+# =============================================================================
+# 凭据代理绑定 (per-credential proxy，本 fork 增强)
+# =============================================================================
+
+
+@router.get("/proxies")
+async def list_cred_proxies(token: str = Depends(verify_panel_token)):
+    """列出所有代理实体（供前端下拉选择）"""
+    try:
+        proxies = await proxy_store.list_proxies()
+        return JSONResponse(content={"proxies": proxies})
+    except Exception as e:
+        log.error(f"获取代理列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/proxy/{filename}")
+async def set_credential_proxy(
+    filename: str,
+    request: dict,
+    token: str = Depends(verify_panel_token),
+    mode: str = "geminicli",
+):
+    """
+    设置/清除某条凭据绑定的代理。
+
+    body: {"proxy": "<代理id>"} 或 {"proxy": ""} / {"proxy": null} 表示清除（回退全局代理）
+    """
+    try:
+        mode = validate_mode(mode)
+        if not filename.endswith(".json"):
+            raise HTTPException(status_code=400, detail="无效的文件名")
+
+        filename = os.path.basename(filename)
+        storage_adapter = await get_storage_adapter()
+        credential_data = await storage_adapter.get_credential(filename, mode=mode)
+        if not credential_data:
+            raise HTTPException(status_code=404, detail="凭证不存在")
+
+        proxy_id = (request or {}).get("proxy")
+        proxy_id = (proxy_id or "").strip() or None
+
+        if proxy_id:
+            p = await proxy_store.get_proxy(proxy_id)
+            if not p:
+                raise HTTPException(status_code=400, detail="指定的代理不存在")
+
+        # 写入凭据数据的 "proxy" 字段（与凭据一起持久化）
+        if proxy_id:
+            credential_data["proxy"] = proxy_id
+        else:
+            credential_data.pop("proxy", None)
+
+        ok = await storage_adapter.store_credential(filename, credential_data, mode=mode)
+        if not ok:
+            raise HTTPException(status_code=500, detail="保存凭据失败")
+
+        # 解绑时也同步清理该凭据绑定的 model_cooldowns 无关字段（无需处理）
+        log.info(f"[PROXY] 凭据 {filename} 代理已设置: {proxy_id or '全局'}")
+        return JSONResponse(content={
+            "success": True,
+            "filename": filename,
+            "proxy": proxy_id,
+            "proxy_name": (await proxy_store.get_proxy(proxy_id))["name"] if proxy_id else None,
+        })
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"设置凭据代理失败 {filename}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -356,17 +356,20 @@ class LoginRequest(BaseModel):
 class AuthStartRequest(BaseModel):
     project_id: Optional[str] = None  # 现在是可选的
     mode: Optional[str] = "geminicli"  # 凭证模式: geminicli 或 antigravity
+    proxy_id: Optional[str] = None  # 预选代理（本 fork 增强），认证成功后绑定到凭据
 
 
 class AuthCallbackRequest(BaseModel):
     project_id: Optional[str] = None  # 现在是可选的
     mode: Optional[str] = "geminicli"  # 凭证模式: geminicli 或 antigravity
+    proxy_id: Optional[str] = None
 
 
 class AuthCallbackUrlRequest(BaseModel):
     callback_url: str  # OAuth回调完整URL
     project_id: Optional[str] = None  # 可选的项目ID
     mode: Optional[str] = "geminicli"  # 凭证模式: geminicli 或 antigravity
+    proxy_id: Optional[str] = None
 
 
 class CredFileActionRequest(BaseModel):

@@ -21,6 +21,18 @@ from log import log
 from src.httpx_client import get_async, post_async
 
 
+# Credentials 已知/已处理的字段名；其余字段会被保留到 extra_fields 并在 to_dict 时回填
+_KNOWN_FIELDS = {
+    "token",
+    "access_token",
+    "refresh_token",
+    "client_id",
+    "client_secret",
+    "expiry",
+    "project_id",
+}
+
+
 class TokenError(Exception):
     """Token相关错误"""
 
@@ -49,6 +61,10 @@ class Credentials:
         # 反代配置将在使用时异步获取
         self.oauth_base_url = None
         self.token_endpoint = None
+
+        # 保留原始凭证中的额外字段（如本 fork 的 "proxy" 绑定、scopes、token_uri 等），
+        # 避免 to_dict() 时被丢弃
+        self.extra_fields: Dict[str, Any] = {}
 
     def is_expired(self) -> bool:
         """检查token是否过期"""
@@ -149,6 +165,7 @@ class Credentials:
             client_secret=data.get("client_secret"),
             expires_at=expires_at,
             project_id=data.get("project_id"),
+            extra_fields={k: v for k, v in data.items() if k not in _KNOWN_FIELDS},
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -163,6 +180,11 @@ class Credentials:
 
         if self.expires_at:
             result["expiry"] = self.expires_at.isoformat()
+
+        # 回填额外字段（如 proxy 绑定、scopes、token_uri）
+        if self.extra_fields:
+            for k, v in self.extra_fields.items():
+                result.setdefault(k, v)
 
         return result
 

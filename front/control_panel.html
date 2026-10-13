@@ -1423,6 +1423,18 @@
                     </div>
                 </div>
 
+                <!-- 代理预选（本 fork 增强）：本次授权生成的凭据将绑定该代理 -->
+                <div class="form-group">
+                    <label for="oauthProxySelect"
+                        style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">🌐 代理（可选）：</label>
+                    <select id="oauthProxySelect" class="config-input" style="width: 100%; padding: 10px;">
+                        <option value="">使用全局代理 / 直连</option>
+                    </select>
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                        💡 选择后，本次授权生成的凭据将始终通过该代理发起请求（可在“配置管理 → 代理管理”中维护代理列表）
+                    </small>
+                </div>
+
                 <button class="btn" id="getAuthBtn" onclick="startAuth()">获取认证链接</button>
 
                 <div id="authUrlSection" class="hidden">
@@ -1509,6 +1521,18 @@
                     <p style="margin: 10px 0;">
                         获取谷歌Antigravity 凭证
                     </p>
+                </div>
+
+                <!-- 代理预选（本 fork 增强）：本次授权生成的凭据将绑定该代理 -->
+                <div class="form-group">
+                    <label for="agProxySelect"
+                        style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">🌐 代理（可选）：</label>
+                    <select id="agProxySelect" class="config-input" style="width: 100%; padding: 10px;">
+                        <option value="">使用全局代理 / 直连</option>
+                    </select>
+                    <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                        💡 选择后，本次授权生成的凭据将始终通过该代理发起请求
+                    </small>
                 </div>
 
                 <button class="btn" id="getAntigravityAuthBtn">获取 Antigravity 认证链接</button>
@@ -2250,6 +2274,39 @@
                                 <input type="number" id="keepaliveInterval" class="config-input" min="5" max="86400" />
                                 <small class="config-note">两次保活请求之间的等待时间，范围 5 - 86400 秒，默认 60 <span
                                         style="color: #28a745;">✓ 支持热更新</span></small>
+                            </div>
+                        </div>
+
+                        <div class="config-group">
+                            <h4>代理管理（每条凭据可绑定独立代理）</h4>
+
+                            <div class="form-group">
+                                <div class="config-info" style="background-color:#e7f3ff; border:1px solid #b3d9ff; color:#004085;">
+                                    在此维护代理列表；回到「OAuth认证」标签的高级选项，或凭据卡片的「设置代理」按钮，即可把某条凭据绑定到指定代理。
+                                    未绑定的凭据走上面的「代理设置」（全局代理）。
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>新增代理:</label>
+                                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                    <input type="text" id="newProxyName" class="config-input" style="flex:1; min-width:140px;"
+                                        placeholder="代理名称，如 香港-01" />
+                                    <input type="text" id="newProxyUrl" class="config-input" style="flex:2; min-width:240px;"
+                                        placeholder="http://host:port 或 socks5://host:port" />
+                                    <button type="button" class="btn" style="padding:6px 16px;" onclick="addProxy()">新增</button>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label>代理列表:</label>
+                                <div id="proxyList" style="margin-top:6px;">
+                                    <p style="color:#888;">加载中...</p>
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <button type="button" class="refresh-btn" onclick="loadProxyList()">刷新代理列表</button>
                             </div>
                         </div>
 

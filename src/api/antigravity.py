@@ -21,6 +21,7 @@ from log import log
 
 from src.credential_manager import credential_manager
 from src.httpx_client import stream_post_async, post_async
+from src.proxies import resolve_proxy_for_credential
 from src.models import Model, model_to_dict
 from src.utils import ANTIGRAVITY_USER_AGENT
 
@@ -320,12 +321,16 @@ async def stream_request(
         success_recorded = False  # 标记是否已记录成功
         need_retry = False  # 标记是否需要重试
 
+        # 每次尝试都按当前凭据解析代理（支持重试切换凭据后使用不同代理）
+        current_proxy = await resolve_proxy_for_credential(credential_data)
+
         try:
             async for chunk in stream_post_async(
                 url=target_url,
                 body=final_payload,
                 native=native,
-                headers=auth_headers
+                headers=auth_headers,
+                proxy=current_proxy
             ):
                 # 判断是否是Response对象
                 if isinstance(chunk, Response):
@@ -594,12 +599,16 @@ async def non_stream_request(
 
     for attempt in range(max_retries + 1):
         need_retry = False  # 标记是否需要重试
-        
+
+        # 每次尝试都按当前凭据解析代理（支持重试切换凭据后使用不同代理）
+        current_proxy = await resolve_proxy_for_credential(credential_data)
+
         try:
             response = await post_async(
                 url=target_url,
                 json=final_payload,
-                headers=auth_headers
+                headers=auth_headers,
+                proxy=current_proxy
             )
 
             status_code = response.status_code
@@ -783,11 +792,13 @@ async def fetch_available_models() -> List[Dict[str, Any]]:
     try:
         # 使用 POST 请求获取模型列表
         antigravity_url = await get_antigravity_api_url()
+        current_proxy = await resolve_proxy_for_credential(credential_data)
 
         response = await post_async(
             url=f"{antigravity_url}/v1internal:fetchAvailableModels",
             json={},  # 空的请求体
-            headers=headers
+            headers=headers,
+            proxy=current_proxy
         )
 
         if response.status_code == 200:
@@ -840,13 +851,14 @@ async def fetch_available_models() -> List[Dict[str, Any]]:
         return []
 
 
-async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
+async def fetch_quota_info(access_token: str, proxy: Optional[str] = None) -> Dict[str, Any]:
     """
     获取指定凭证的额度信息
-    
+
     Args:
         access_token: Antigravity 访问令牌
-        
+        proxy: 该凭据应使用的代理（None 表示走全局代理）
+
     Returns:
         包含额度信息的字典，格式为：
         {
@@ -871,7 +883,8 @@ async def fetch_quota_info(access_token: str) -> Dict[str, Any]:
             url=f"{antigravity_url}/v1internal:fetchAvailableModels",
             json={},
             headers=headers,
-            timeout=30.0
+            timeout=30.0,
+            proxy=proxy
         )
 
         if response.status_code == 200:
