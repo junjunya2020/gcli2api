@@ -1051,7 +1051,8 @@ function switchTab(tabName) {
 function triggerTabDataLoad(tabName) {
     if (tabName === 'manage') AppState.creds.refresh();
     if (tabName === 'antigravity-manage') AppState.antigravityCreds.refresh();
-    if (tabName === 'config') { loadConfig(); loadProxyOptions(); loadProxyList(); }
+    if (tabName === 'config') { loadConfig(); loadProxyOptions(); }
+    if (tabName === 'proxies') { loadProxyOptions(); loadProxyList(); }
     if (tabName === 'logs') connectWebSocket();
 }
 

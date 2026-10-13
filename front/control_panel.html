@@ -1383,6 +1383,7 @@
                 <button class="tab" onclick="switchTab('manage')">GCLI凭证管理</button>
                 <button class="tab" onclick="switchTab('antigravity-manage')">Antigravity凭证管理</button>
                 <button class="tab" onclick="switchTab('config')">配置管理</button>
+                <button class="tab" onclick="switchTab('proxies')">代理管理</button>
                 <button class="tab" onclick="switchTab('logs')">实时日志</button>
                 <button class="tab" onclick="switchTab('about')">项目信息</button>
             </div>
@@ -2278,39 +2279,6 @@
                         </div>
 
                         <div class="config-group">
-                            <h4>代理管理（每条凭据可绑定独立代理）</h4>
-
-                            <div class="form-group">
-                                <div class="config-info" style="background-color:#e7f3ff; border:1px solid #b3d9ff; color:#004085;">
-                                    在此维护代理列表；回到「OAuth认证」标签的高级选项，或凭据卡片的「设置代理」按钮，即可把某条凭据绑定到指定代理。
-                                    未绑定的凭据走上面的「代理设置」（全局代理）。
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>新增代理:</label>
-                                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-                                    <input type="text" id="newProxyName" class="config-input" style="flex:1; min-width:140px;"
-                                        placeholder="代理名称，如 香港-01" />
-                                    <input type="text" id="newProxyUrl" class="config-input" style="flex:2; min-width:240px;"
-                                        placeholder="http://host:port 或 socks5://host:port" />
-                                    <button type="button" class="btn" style="padding:6px 16px;" onclick="addProxy()">新增</button>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>代理列表:</label>
-                                <div id="proxyList" style="margin-top:6px;">
-                                    <p style="color:#888;">加载中...</p>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <button type="button" class="refresh-btn" onclick="loadProxyList()">刷新代理列表</button>
-                            </div>
-                        </div>
-
-                        <div class="config-group">
                             <h4>配置热更新说明</h4>
 
                             <div class="form-group">
@@ -2338,6 +2306,42 @@
                             </div>
 
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 代理管理标签页 -->
+            <div id="proxiesTab" class="tab-content">
+                <h3>代理管理</h3>
+                <p>维护代理列表，可为每条凭据绑定独立代理（支持 HTTP / SOCKS5）。未绑定的凭据使用「配置管理」中的全局代理。</p>
+
+                <div class="config-group">
+                    <div class="config-info" style="background-color:#e7f3ff; border:1px solid #b3d9ff; color:#004085;">
+                        在此维护代理列表；到「OAuth认证」/「Antigravity认证」标签的高级选项，或凭据卡片的「设置代理」按钮，即可把某条凭据绑定到指定代理。
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <h4>新增代理</h4>
+                    <div class="form-group">
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <input type="text" id="newProxyName" class="config-input" style="flex:1; min-width:140px;"
+                                placeholder="代理名称，如 香港-01" />
+                            <input type="text" id="newProxyUrl" class="config-input" style="flex:2; min-width:240px;"
+                                placeholder="http://host:port 或 socks5://host:port" />
+                            <button type="button" class="btn" style="padding:6px 16px;" onclick="addProxy()">新增</button>
+                        </div>
+                        <small class="config-note">支持 http:// 、https:// 、socks5:// ；未写协议默认按 http 处理</small>
+                    </div>
+                </div>
+
+                <div class="config-group">
+                    <h4>代理列表</h4>
+                    <div class="manage-actions" style="margin-bottom:10px;">
+                        <button type="button" class="refresh-btn" onclick="loadProxyList()">刷新代理列表</button>
+                    </div>
+                    <div id="proxyList">
+                        <p style="color:#888;">加载中...</p>
                     </div>
                 </div>
             </div>
